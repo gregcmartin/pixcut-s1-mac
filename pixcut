@@ -1,0 +1,10 @@
+#!/bin/bash
+set -euo pipefail
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+if [[ ! -x "$ROOT/.venv/bin/python" ]]; then
+  echo "Run $ROOT/setup.sh first." >&2
+  exit 1
+fi
+export PYTHONPATH="$ROOT/vendor/PixCut-App:$ROOT${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONUNBUFFERED=1
+exec "$ROOT/.venv/bin/python" -m stickerflow.cli "$@"
