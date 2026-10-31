@@ -235,7 +235,8 @@ and pressure tests that preserve the print raster and cut coordinates.
 An upstream cat sheet was prepared, visually inspected, and
 dry-run checked. The copy-count and skip prompts were exercised in a terminal.
 
-A physical one-sticker job completed; the three-sticker pressure test has been
-prepared and previewed without another print. **Peel quality and registration
-remain operator checks.** These are reverse-engineered protocol tools, not an
-official Liene driver.
+A physical one-sticker job completed, followed by a single-sheet, three-sticker
+pressure test at 42, 44, and 46. The printer confirmed print-and-cut completion
+and returned to idle without errors. **The pressure-test peel comparison and
+registration check remain pending.** These are reverse-engineered protocol
+tools, not an official Liene driver.
