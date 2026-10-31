@@ -61,7 +61,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertTrue(all(0 <= x <= 7112 and 0 <= y <= 4064 for x, y in coords))
         self.assertEqual(m['layout']['cut_paths'], 1)
         self.assertAlmostEqual(m['layout']['artwork_mm'][0], 65, delta=0.1)
-        self.assertAlmostEqual(m['layout']['cut_bounds_mm'][0], 68, delta=0.3)
+        self.assertAlmostEqual(m['layout']['cut_bounds_mm'][0], 65, delta=0.3)
         cli.validate_artifacts(job, m)
 
     def test_holes_do_not_make_inner_cuts(self):
@@ -140,7 +140,7 @@ class WorkflowTests(unittest.TestCase):
 
     def test_uncertain_submission_is_recorded(self):
         job = self.prepare()
-        def fail(path, copies, update):
+        def fail(path, copies, update, **kwargs):
             update({'phase': 'submitting'})
             raise TimeoutError('Lost response after submission')
         with patch.object(cli, 'confirm_copies', return_value=2), patch.object(device, 'send', side_effect=fail):
@@ -179,6 +179,23 @@ class WorkflowTests(unittest.TestCase):
                 device.check_ready(client)
         client.send_command.return_value = {'result': ['20', '2000', '::0', {'media-size': 5013}]}
         self.assertIn('result', device.check_ready(client))
+
+    def test_ambiguous_media_requires_explicit_confirmation(self):
+        client = Mock()
+        client.send_command.return_value = {'result': ['20', '2000', '::0', {'media-size': 5009}]}
+        with self.assertRaises(RuntimeError):
+            device.check_ready(client)
+        response = device.check_ready(client, confirmed_media='white-sticker-4x7')
+        self.assertEqual(response['result'][3]['media-size'], 5009)
+        self.assertEqual(response['host-media-confirmation'], 'white-sticker-4x7')
+        for values in (['40', '3030', '::0', {'media-size': 5009}], ['60', '3015', '::5401', {'media-size': 5009}], ['20', '2000', '::0', {'media-size': 5012}], ['20', '2000', '::0', {}]):
+            client.send_command.return_value = {'result': values}
+            with self.assertRaises(RuntimeError):
+                device.check_ready(client, confirmed_media='white-sticker-4x7')
+
+    def test_optional_border_is_still_supported(self):
+        job = self.prepare(border_mm=1.5)
+        self.assertAlmostEqual(read_json(job / 'job.json')['layout']['cut_bounds_mm'][0], 68, delta=0.3)
 
     def test_session_tracks_id_before_upload_and_closes(self):
         client = Mock()

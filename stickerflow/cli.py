@@ -119,7 +119,7 @@ def confirm_copies(copies):
     if not 1 <= copies <= 36:
         raise ValueError('Copies must be 1–36 sheets.')
     expected = f'PRINT {copies}'
-    answer = input(f'Review the preview and load 4×7 sticker media. Type {expected} to print and cut ({copies} sheet(s)); Enter skips: ')
+    answer = input(f'Confirm WHITE 4×7 STICKER PAPER is loaded and the preview is correct. Type {expected} to print and cut ({copies} sheet(s)); Enter skips: ')
     return copies if answer.strip() == expected else None
 
 
@@ -139,7 +139,8 @@ def print_job(job, copies=None, dry_run=False):
             print('Skipped. Prepared files are retained for later printing.')
             return 'skipped'
         validate_artifacts(job, manifest)
-        attempt = {'started': now(), 'copies': copies, 'phase': 'connecting'}
+        attempt = {'started': now(), 'copies': copies, 'phase': 'connecting',
+                   'confirmed_media': 'white-sticker-4x7'}
         manifest['attempts'].append(attempt)
         manifest['status'] = 'in-progress'
         write_json(job / 'job.json', manifest)
@@ -149,7 +150,7 @@ def print_job(job, copies=None, dry_run=False):
             write_json(job / 'job.json', manifest)
 
         try:
-            result = device.send(job, copies, update)
+            result = device.send(job, copies, update, confirmed_media=attempt['confirmed_media'])
             attempt.update({'phase': 'completed', 'result': result, 'finished': now()})
             manifest['status'] = 'completed'
             print('Printer confirmed print and cut completion.')
@@ -232,7 +233,7 @@ def watch(args):
 
 def add_layout_options(parser):
     parser.add_argument('--width-mm', type=float, default=65, help='Artwork width, excluding border (default: 65).')
-    parser.add_argument('--border-mm', type=float, default=1.5, help='White border outside silhouette (default: 1.5).')
+    parser.add_argument('--border-mm', type=float, default=0, help='White border outside silhouette (default: 0, no border).')
     parser.add_argument('--repeat', type=int, default=1, help='Stickers on ONE sheet; distinct from sheet copies.')
     parser.add_argument('--background', choices=['auto', 'keep', 'white'], default='auto')
     parser.add_argument('--knife-pressure', type=int, default=42, help='Upstream kiss-cut default: 42; calibrate on your media.')

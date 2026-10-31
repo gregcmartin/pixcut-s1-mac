@@ -3,9 +3,10 @@
 Drop artwork into `create/`, prepare a sticker sheet, review it in the terminal,
 choose a copy count, and confirm printing. All image processing runs locally.
 
-**Status: software tested; physical printing not yet verified.** The printer
-was not connected during development. An upstream sample was prepared and
-visually checked, but no physical job has been sent from this implementation.
+**Status: USB communication verified; physical printing not yet verified.**
+A connected PixCut S1 on firmware `1.0.34_0073` responds to identity, status,
+media, and job-list queries. Artwork preparation and previews have been checked,
+but no physical job has yet been sent from this implementation.
 
 ## Install and connect
 
@@ -40,8 +41,8 @@ required. The repository is independent of and unaffiliated with Liene.
 
 ## Artwork and sizing
 
-Default: one artwork placement per sheet, **65 mm wide**, with a **1.5 mm
-white kiss-cut border**, 5 mm minimum sheet margins, and upstream knife
+Default: one artwork placement per sheet, **65 mm wide**, with **no added
+border**, 5 mm minimum sheet margins, and upstream knife
 pressure 42. Physical cut alignment and pressure need checking on the first
 sheet. Width excludes the border; height follows the image aspect ratio.
 
@@ -51,7 +52,7 @@ transparency are handled. Only the first image/page of multi-frame files is used
 
 ```sh
 # Prepare without connecting to or printing on the device.
-./pixcut prepare create/my-sticker.png --width-mm 65 --border-mm 1.5
+./pixcut prepare create/my-sticker.png --width-mm 65 --border-mm 0
 
 # The command prints a JOB_ID; use that ID below.
 ./pixcut preview JOB_ID --terminal
@@ -137,6 +138,14 @@ failed. `in-progress` can also remain after a crash. Inspect the printer and
 `jobs` before retrying either state. `completed` is recorded only after the
 driver observes a cut phase, a completion report, and return to idle.
 
+The final print prompt also confirms that **white 4×7 sticker paper** is loaded.
+Some S1s report media code `5009` / `3x3` during 4×7 use, so that reading alone
+cannot verify the physical paper. For this specific reading, the CLI requires
+the operator's stock confirmation and records it alongside the unchanged
+device response. Unknown readings and reported 4×6 photo stock remain blocked,
+as do printer faults/busy states. No device settings are rewritten.
+See the [upstream observations](https://github.com/eastbaymakersclub/pixcut-s1#job-sending).
+
 ## Connectivity and dependencies
 
 This implementation uses USB, based on the MIT-licensed
@@ -165,6 +174,6 @@ integrity, confirmation, error reporting, wrong media, and watcher
 deduplication. An upstream cat sheet was prepared, visually inspected, and
 dry-run checked. The copy-count and skip prompts were exercised in a terminal.
 
-**USB status, physical print/cut, registration, and blade pressure still require
-the connected printer and first approved sheet.** These are reverse-engineered
+**Physical print/cut, registration, and blade pressure still require the first
+approved sheet.** These are reverse-engineered
 protocol tools, not an official Liene driver.

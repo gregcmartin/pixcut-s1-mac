@@ -1,5 +1,6 @@
 """USB control and a local socket that shares the active session safely."""
 import json
+import logging
 import os
 import socket
 import socketserver
@@ -65,7 +66,7 @@ def execute(client, action, job_id=None, props=None):
     return checked_response(client.send_command(command))
 
 
-def check_ready(client):
+def check_ready(client, *, confirmed_media=None):
     response = execute(client, 'status')
     values = response['result']
     if not isinstance(values, list) or len(values) < 4:
@@ -75,8 +76,16 @@ def check_ready(client):
         raise RuntimeError(f'Printer is not ready: state={state}, sub-state={sub}, alerts={alerts}. Run ./pixcut status.')
     if isinstance(media, dict):
         media = media.get('media-size')
+    # 5009/3x3 is also observed on S1s being used with 4x7 media. It is not
+    # reliable evidence of the loaded stock. Preserve the reading and require
+    # an explicit operator declaration; do not rewrite printer properties.
+    if str(media) == '5009' and confirmed_media == 'white-sticker-4x7':
+        logging.getLogger(__name__).warning(
+            'Printer reports ambiguous media code 5009; using operator-confirmed white 4×7 sticker stock.'
+        )
+        return {**response, 'host-media-confirmation': confirmed_media}
     if str(media) != '5013':
-        raise RuntimeError(f'Expected 4×7 sticker media (5013), printer reports {media!r}. Load the sticker cassette and check status.')
+        raise RuntimeError(f'Cannot verify 4×7 sticker stock: printer reports {media!r}. Code 5009 requires explicit white 4×7 stock confirmation; other mismatches remain blocked.')
     return response
 
 
@@ -131,7 +140,7 @@ def control(action, job_id=None, props=None):
             client.close()
 
 
-def send(job_dir, copies, on_update):
+def send(job_dir, copies, on_update, *, confirmed_media=None):
     """Persist assigned ID before uploading; never retry uncertain jobs."""
     with lock(STATE / 'printer.lock'):
         client = make_client(job_dir / 'usb-logs', copies)
@@ -139,7 +148,7 @@ def send(job_dir, copies, on_update):
         job_id = None
         try:
             client.open()
-            readiness = check_ready(client)
+            readiness = check_ready(client, confirmed_media=confirmed_media)
             on_update({'phase': 'ready', 'preflight': readiness})
             client.start_heartbeat(5)
             with control_server(client, active):

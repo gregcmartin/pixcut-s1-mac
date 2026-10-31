@@ -28,7 +28,7 @@ PIPELINE_VERSION = 1
 @dataclass(frozen=True)
 class Options:
     width_mm: float = 65.0
-    border_mm: float = 1.5
+    border_mm: float = 0.0
     repeat: int = 1
     background: str = 'auto'
     knife_pressure: int = 42
