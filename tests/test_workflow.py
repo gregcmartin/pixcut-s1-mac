@@ -156,6 +156,37 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'safe sheet area'):
             self.prepare(width_mm=88, border_mm=5)
 
+    def test_pressure_calibration_preserves_art_and_cut_geometry(self):
+        self.source.write_bytes(png(Image.new('RGB', (1450, 1085), '#cc2020')))
+        baseline = self.prepare(repeat=3)
+        calibration = self.prepare(repeat=3, pressure_steps=(42, 44, 46))
+        self.assertEqual((baseline / 'print.jpg').read_bytes(), (calibration / 'print.jpg').read_bytes())
+        self.assertEqual((baseline / 'cut.svg').read_bytes(), (calibration / 'cut.svg').read_bytes())
+        commands = (calibration / 'cut.plt').read_text().split()
+        self.assertEqual([c for c in commands if c.startswith('KP')], ['KP42', 'KP44', 'KP46'])
+        baseline_draws = re.findall(r'D\d+,\d+', (baseline / 'cut.plt').read_text())
+        self.assertEqual([c for c in commands if c.startswith('D')], baseline_draws)
+        for pressure in ('KP44', 'KP46'):
+            i = commands.index(pressure)
+            self.assertTrue(all(c.startswith('U') for c in commands[i-3:i]))
+            self.assertEqual(commands[i-3], commands[i-1])
+            self.assertEqual(commands[i-1], commands[i+1])
+            start = tuple(map(int, commands[i-3][1:].split(',')))
+            nudge = tuple(map(int, commands[i-2][1:].split(',')))
+            self.assertEqual(nudge, (start[0] + 4, start[1]))
+        manifest = read_json(calibration / 'job.json')
+        self.assertEqual([s['knife_pressure'] for s in manifest['layout']['pressure_samples']], [42, 44, 46])
+        cli.validate_artifacts(calibration, manifest)
+        self.assertEqual(Options().knife_pressure, 42)
+
+    def test_pressure_calibration_rejects_invalid_profiles(self):
+        for options in (Options(repeat=3, pressure_steps=(42, 44)),
+                        Options(repeat=2, pressure_steps=(42, 51)),
+                        Options(repeat=2, pressure_steps=(0, 44)),
+                        Options(repeat=1, pressure_steps=(44,))):
+            with self.assertRaises(ValueError):
+                options.validate()
+
     def test_invalid_numeric_options(self):
         for options in (Options(width_mm=float('nan')), Options(border_mm=-1), Options(repeat=0), Options(knife_pressure=101)):
             with self.assertRaises(ValueError):

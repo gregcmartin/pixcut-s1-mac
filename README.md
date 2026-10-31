@@ -6,8 +6,19 @@ choose a copy count, and confirm printing. All image processing runs locally.
 **Status: USB communication and a physical print-and-cut job verified.**
 A connected PixCut S1 on firmware `1.0.34_0073` responds to identity, status,
 media, and job-list queries. A one-sheet job completed printing and cutting,
-returned to idle, and was confirmed by the operator. Peel quality and precise
-cut registration still need checking on the output.
+returned to idle, and was confirmed by the operator. The first sticker was
+difficult to peel; cut pressure and precise edge alignment are being calibrated.
+
+## From artwork to a real sticker
+
+| Source artwork | First sticker on a laptop |
+| --- | --- |
+| <img src="docs/images/sample-artwork.png" alt="Red and black AI versus AI source artwork" width="420"> | <img src="docs/images/first-sticker-on-laptop.jpg" alt="First printed sticker applied to a laptop lid" width="420"> |
+
+First prototype: approximately **65 × 48.7 mm**, no added border. The laptop
+photo was converted from iPhone HEIC to JPEG for this README, with camera and
+location metadata removed. This shows the first physical result, before cut
+quality tuning. Current layouts fit three copies of this design per sheet.
 
 ## Install and connect
 
@@ -109,6 +120,31 @@ when peeling, the cut needs inspection before changing blade pressure.
 
 Plan each print as a full sheet. This CLI has no partial-sheet refeed workflow.
 
+### Compare cut pressures on one sheet
+
+```sh
+# Prepare three identical stickers, with pressures 42, 44, and 46.
+./pixcut calibrate-pressure create/my-sticker.png
+./pixcut preview JOB_ID --terminal
+./pixcut print JOB_ID
+
+# After inspecting the output, use the lowest pressure that peels cleanly.
+# Example only: 44 is not yet a calibrated value for every printer.
+./pixcut watch --knife-pressure 44
+```
+
+The test keeps the artwork, dimensions, border, and cut coordinates unchanged.
+Only the pressure varies: at the default size, top = 42, middle = 44, bottom = 46.
+Labels appear in the preview, not on the stickers. Compare peeling while keeping
+the backing intact; a white sliver caused by print/cut alignment is a separate
+issue. Preparing a test does not change the default pressure or start printing.
+
+For other sizes, `--pressures 42 44 46` assigns one value to each sticker in
+reading order. All samples must fit on one sheet; reduce `--width-mm` if needed.
+This comparison command accepts 2–6 values, limited to 1–50. Inline pressure
+changes use the upstream driver's documented blade-up nudge/return sequence.
+See [upstream pressure notes](https://github.com/popcornhax/PixCut-App/blob/main/docs/pixcut-usb-protocol.md#knife-pressure--profile-kp).
+
 Terminal previews are approximate. `jobs/JOB_ID/preview.png` is the full
 resolution preview. Its red paths show where the knife will cut; they are
 absent from the print JPEG. `cut.svg` contains the vector outlines.
@@ -194,11 +230,12 @@ PYTHONPATH=vendor/PixCut-App:. .venv/bin/python -m unittest discover -s tests -v
 
 Automated tests cover geometry, transparency, repeat overflow, manifest
 integrity, confirmation, error reporting, wrong media, and watcher
-deduplication, plus auto-fill, total sticker counts, and old-job compatibility.
+deduplication, plus auto-fill, total sticker counts, old-job compatibility,
+and pressure tests that preserve the print raster and cut coordinates.
 An upstream cat sheet was prepared, visually inspected, and
 dry-run checked. The copy-count and skip prompts were exercised in a terminal.
 
-A physical one-sticker job completed; the three-sticker sheet has been prepared
-and previewed without another print. **Peel quality and registration remain
-operator checks.** These are reverse-engineered protocol tools, not an official
-Liene driver.
+A physical one-sticker job completed; the three-sticker pressure test has been
+prepared and previewed without another print. **Peel quality and registration
+remain operator checks.** These are reverse-engineered protocol tools, not an
+official Liene driver.

@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageOps
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 from pillow_heif import register_heif_opener
 from scipy.ndimage import binary_fill_holes, binary_propagation
 from shapely.geometry import Polygon
@@ -15,14 +15,14 @@ from shapely.ops import unary_union
 from skimage.measure import find_contours
 
 from pixcut.image_to_cut import add_printer_margins
-from pixcut.svg_to_plt import points_to_plt
+from pixcut.svg_to_plt import points_to_plt, _pressure_switch_reset_commands
 
 register_heif_opener()
 DPI = 300
 PX_MM = DPI / 25.4
 SHEET = (1200, 2100)
 EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.heic', '.heif', '.tif', '.tiff', '.bmp'}
-PIPELINE_VERSION = 2
+PIPELINE_VERSION = 3
 
 
 @dataclass(frozen=True)
@@ -32,6 +32,7 @@ class Options:
     repeat: int | None = None  # None fills the sheet at the requested size.
     background: str = 'auto'
     knife_pressure: int = 42
+    pressure_steps: tuple[int, ...] | None = None
 
     def validate(self):
         if not math.isfinite(self.width_mm) or not 5 <= self.width_mm <= 88:
@@ -42,6 +43,11 @@ class Options:
             raise ValueError('Stickers per sheet must be auto or 1–100.')
         if not 1 <= self.knife_pressure <= 100:
             raise ValueError('Knife pressure must be 1–100.')
+        if self.pressure_steps is not None:
+            if not 2 <= len(self.pressure_steps) <= 6 or any(not 1 <= p <= 50 for p in self.pressure_steps):
+                raise ValueError('Pressure calibration requires 2–6 pressures, each from 1 to 50.')
+            if self.repeat != len(self.pressure_steps):
+                raise ValueError('Pressure calibration needs exactly one sticker per pressure value.')
         if self.background not in ('auto', 'keep', 'white'):
             raise ValueError('Background must be auto, keep, or white.')
 
@@ -125,6 +131,8 @@ def render(data, options, destination):
     cols = min(cols, count)
     sheet = Image.new('RGBA', SHEET, 'white')
     all_paths = []
+    path_pressures = []
+    pressure_samples = []
     for i in range(count):
         row, col = divmod(i, cols)
         row_count = min(cols, count - row * cols)
@@ -133,6 +141,11 @@ def render(data, options, destination):
         dy = round(edge + row * (cell_h + gap) - y0)
         sheet.alpha_composite(img, (dx, dy))
         all_paths.extend([[(x + dx, y + dy) for x, y in p] for p in paths])
+        pressure = options.pressure_steps[i] if options.pressure_steps else options.knife_pressure
+        path_pressures.extend([pressure] * len(paths))
+        if options.pressure_steps:
+            pressure_samples.append({'sticker': i + 1, 'knife_pressure': pressure,
+                                     'label_px': [round(x0 + dx), round(y1 + dy + 4)]})
     for path in all_paths:
         if any(not (edge - 1 <= x <= SHEET[0] - edge + 1 and edge - 1 <= y <= SHEET[1] - edge + 1) for x, y in path):
             raise ValueError('Cut path exceeds the safe sheet area.')
@@ -147,7 +160,24 @@ def render(data, options, destination):
     (destination / 'print.jpg').write_bytes(out.getvalue())
     # Firmware PLT coordinates: rotate -90°, 1016 units/inch, 40 units/mm.
     plt_paths = [[(7112 - y * 1016 / DPI, x * 1016 / DPI) for x, y in p] for p in all_paths]
-    (destination / 'cut.plt').write_text(points_to_plt(plt_paths, kp=options.knife_pressure))
+    if options.pressure_steps:
+        commands = ['IN', 'VER0.1.0']
+        previous_pressure = None
+        for path, pressure in zip(plt_paths, path_pressures):
+            if pressure != previous_pressure:
+                if previous_pressure is not None:
+                    # Upstream's blade-up nudge/return ensures inline pressure
+                    # transitions reseat the blade; 4 units is 0.1 mm.
+                    commands.extend(_pressure_switch_reset_commands(path[0], nudge_u=4))
+                commands.append(f'KP{pressure}')
+                previous_pressure = pressure
+            commands.append(f'U{round(path[0][0])},{round(path[0][1])}')
+            commands.extend(f'D{round(x)},{round(y)}' for x, y in path)
+        commands.append(' U6476,0 @ ')
+        cut_plt = ' '.join(commands)
+    else:
+        cut_plt = points_to_plt(plt_paths, kp=options.knife_pressure)
+    (destination / 'cut.plt').write_text(cut_plt)
     svg_paths = []
     for p in all_paths:
         points = ' '.join(f'{x:.3f},{y:.3f}' for x, y in p)
@@ -157,6 +187,9 @@ def render(data, options, destination):
     draw = ImageDraw.Draw(preview)
     for path in all_paths:
         draw.line(path, fill='#e33456', width=3)
+    for sample in pressure_samples:
+        draw.text(tuple(sample['label_px']), f"Sticker {sample['sticker']}: KP{sample['knife_pressure']}",
+                  fill='#222222', font=ImageFont.load_default(size=20))
     preview.save(destination / 'preview.png', dpi=(DPI, DPI))
     img.save(destination / 'artwork.png')
     return {
@@ -164,6 +197,7 @@ def render(data, options, destination):
         'cut_bounds_mm': [round(cell_w / PX_MM, 2), round(cell_h / PX_MM, 2)],
         'cut_paths': len(all_paths), 'sheet_capacity': capacity,
         'stickers_per_sheet': count, 'layout_mode': 'auto-fill' if options.repeat is None else 'fixed',
+        'pressure_samples': pressure_samples,
         'jpeg_bytes': len(out.getvalue()), 'jpeg_quality': quality,
         'warnings': warnings,
         'sha256': {name: digest((destination / name).read_bytes()) for name in ('print.jpg', 'cut.plt', 'preview.png')},

@@ -63,7 +63,13 @@ def describe(job):
     print(f"\nJob: {m['id']}\nArtwork: {art[0]} × {art[1]} mm; border: {m['options']['border_mm']} mm")
     count = stickers_per_sheet(m)
     capacity = m['layout']['sheet_capacity']
-    print(f"Sheet: 4×7 in; {count} sticker(s) per sheet; capacity {capacity} at this size; {m['layout']['cut_paths']} cut path(s); knife pressure {m['options']['knife_pressure']}")
+    pressure_samples = m['layout'].get('pressure_samples', [])
+    pressures = ', '.join(str(s['knife_pressure']) for s in pressure_samples) if pressure_samples else m['options']['knife_pressure']
+    print(f"Sheet: 4×7 in; {count} sticker(s) per sheet; capacity {capacity} at this size; {m['layout']['cut_paths']} cut path(s); knife pressure {pressures}")
+    if pressure_samples:
+        print('Pressure test, left-to-right then top-to-bottom: ' + '; '.join(
+            f"sticker {s['sticker']} = KP{s['knife_pressure']}" for s in pressure_samples))
+        print('Pressure labels appear only in the preview. Choose the lowest pressure that peels cleanly with intact backing.')
     if count < capacity:
         print(f'Note: this layout uses {count} of {capacity} available positions. Prepare again with --repeat auto to fill the sheet.')
     print(f"Preview (red = cut line, not printed): {job / 'preview.png'}")
@@ -278,6 +284,12 @@ def parser():
     prep = sub.add_parser('prepare', help='Create print JPEG, cut PLT/SVG, preview, and manifest offline.')
     prep.add_argument('image')
     add_layout_options(prep)
+    calibration = sub.add_parser('calibrate-pressure', help='Prepare one comparison sheet; does not print or change the default pressure.')
+    calibration.add_argument('image')
+    calibration.add_argument('--pressures', nargs='+', type=int, default=[42, 44, 46], help='One sticker per pressure, in reading order (default: 42 44 46).')
+    calibration.add_argument('--width-mm', type=float, default=65)
+    calibration.add_argument('--border-mm', type=float, default=0)
+    calibration.add_argument('--background', choices=['auto', 'keep', 'white'], default='auto')
     printing = sub.add_parser('print', help='Confirm and print an existing prepared job.')
     printing.add_argument('job', help='Job ID or job directory.')
     printing.add_argument('--copies', type=int, help='Number of sheet copies (still requires confirmation).')
@@ -319,6 +331,11 @@ def main(argv=None):
             print(json.dumps(device.control(command, getattr(args, 'job_id', None), getattr(args, 'props', None)), indent=2))
         elif command == 'prepare':
             describe(prepare(args.image, get_options(args)))
+        elif command == 'calibrate-pressure':
+            options = Options(width_mm=args.width_mm, border_mm=args.border_mm,
+                              repeat=len(args.pressures), background=args.background,
+                              pressure_steps=tuple(args.pressures))
+            describe(prepare(args.image, options))
         elif command == 'print':
             print_job(resolve_job(args.job), args.copies, args.dry_run)
         elif command == 'preview':
