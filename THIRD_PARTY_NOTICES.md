@@ -5,8 +5,7 @@ https://github.com/popcornhax/PixCut-App, MIT License.
 Its source and original license remain in `vendor/PixCut-App/`; they are not
 copied into this repository. The exact revision is recorded in `UPSTREAM.md`.
 This project's modules import its USB transport, protocol client, raster
-padding helper, and PLT serializer. The development sample artwork also comes
-from that repository and is not redistributed here.
+padding helper, and PLT serializer.
 
 Python packages are installed into `.venv/` from `requirements.lock`, not
 redistributed in the Git repository. These include Pillow, pillow-heif, NumPy,

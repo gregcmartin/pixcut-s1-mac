@@ -1,28 +1,20 @@
 # PixCut S1 — Mac CLI
 
-Drop artwork into `create/`, prepare a sticker sheet, review it in the terminal,
-choose a copy count, and confirm printing. All image processing runs locally.
+Print and cut stickers from your Mac over USB. Drop artwork into `create/`,
+preview a sheet, choose how many sheets to print, and confirm. Images are
+processed locally, with no cloud account required.
 
-**Status: USB communication and a physical print-and-cut job verified.**
-A connected PixCut S1 on firmware `1.0.34_0073` responds to identity, status,
-media, and job-list queries. A one-sheet job completed printing and cutting,
-returned to idle, and was confirmed by the operator. The first sticker was
-difficult to peel; cut pressure and precise edge alignment are being calibrated.
-
-## From artwork to a real sticker
-
-| Source artwork | First sticker on a laptop |
+| Artwork | Finished sticker |
 | --- | --- |
-| <img src="docs/images/sample-artwork.png" alt="Red and black AI versus AI source artwork" width="420"> | <img src="docs/images/first-sticker-on-laptop.jpg" alt="First printed sticker applied to a laptop lid" width="420"> |
+| <img src="docs/images/sample-artwork.png" alt="Red and black AI versus AI artwork" width="420"> | <img src="docs/images/sticker-on-laptop.jpg" alt="Printed and cut sticker on a laptop" width="420"> |
 
-First prototype: approximately **65 × 48.7 mm**, no added border. The laptop
-photo was converted from iPhone HEIC to JPEG for this README, with camera and
-location metadata removed. This shows the first physical result, before cut
-quality tuning. Current layouts fit three copies of this design per sheet.
+This design is approximately **65 × 48.7 mm**, with no added border.
+Three fit on one sheet.
 
-## Install and connect
+## Quick start
 
-Requires macOS, [Homebrew](https://brew.sh), and a PixCut S1 with a USB data cable.
+Requires macOS, [Homebrew](https://brew.sh), a USB data cable, and
+**Liene 4×7 sticker paper**.
 
 ```sh
 git clone https://github.com/gregcmartin/pixcut-s1-mac.git
@@ -30,213 +22,105 @@ cd pixcut-s1-mac
 ./setup.sh
 ```
 
-Install the ribbon and cutting blade, load **Liene 4×7 sticker paper** in its
-cassette, and leave the front/rear paper path unobstructed. Power on the printer
-and connect it to the Mac with a **USB data cable**. Close the Liene app if it
-is holding the connection.
+Install the ribbon and cutting blade, load the paper cassette, and keep the
+front and rear paper paths clear. Power on the printer and connect it by USB.
+Close the Liene app if it is using the connection.
 
 ```sh
 ./pixcut doctor
-./pixcut status
 ./pixcut watch
 ```
 
-Copy a generated image into `create/`. The watcher waits for the file to stop
-changing, fills the sheet with copies at the chosen artwork size, displays an
-approximate color preview, asks for **sheet copies**, then shows the total
-sticker count before asking you to type `PRINT 1` (or the chosen sheet count).
-Enter at the final prompt skips; `q` at the copy-count prompt also skips.
-**No confirmation means no print.** Ctrl-C stops the watcher.
+Add an image to `create/`. The watcher prepares a sheet and shows a terminal
+preview. Choose a sheet count, then type `PRINT 1` (or the chosen count) to
+print. The confirmation also shows the total number of stickers.
+Enter at the final prompt skips the job; Ctrl-C stops the watcher.
 
-The watcher is a foreground terminal process. Nothing runs automatically when
-the Mac starts. No cloud account, GUI app, or printer driver registration is
-required. The repository is independent of and unaffiliated with Liene.
+## Artwork and layout
 
-## Artwork and sizing
+The default fills each sheet with copies **65 mm wide**, with **no added
+border**, 5 mm minimum margins, and 3 mm gaps. Height follows the image's aspect
+ratio. Artwork is not shrunk or rotated to fit more copies.
 
-Default: **fill the sheet** with artwork **65 mm wide**, with **no added
-border**, 5 mm minimum sheet margins, 3 mm gaps, and upstream knife
-pressure 42. Physical cut alignment and pressure need checking on the first
-sheet. Width excludes the border; height follows the image aspect ratio.
-
-Auto-fill uses a grid at the requested size; it does not shrink or rotate your
-artwork to squeeze in more. For a 65 × 48.7 mm design, this places **three
-stickers on one sheet**. Printing two sheets gives six stickers. The confirmation
-shows both sheet count and total stickers. Use `--repeat 1` when you deliberately
-want just one sticker on the sheet; `--repeat auto` restores auto-fill.
-Existing prepared jobs retain their original layout and must be prepared again
-to take advantage of the new default.
-
-PNG with real transparency is best for a shaped laptop sticker. PNG, JPEG,
-WebP, HEIC/HEIF, TIFF, and BMP are supported. Orientation and palette
-transparency are handled. Only the first image/page of multi-frame files is used.
+PNG, JPEG, WebP, HEIC/HEIF, TIFF, and BMP are supported. Use a transparent PNG
+for shaped stickers; opaque images get a rectangular cut. Separate artwork
+islands produce separate cuts, and interior holes are not cut.
 
 ```sh
-# Prepare without connecting to or printing on the device.
+# Prepare a sheet without printing.
 ./pixcut prepare create/my-sticker.png --width-mm 65 --border-mm 0
 
-# Explicitly request just one sticker per sheet.
-./pixcut prepare create/my-sticker.png --repeat 1
-
-# The command prints a JOB_ID; use that ID below.
+# Use the JOB_ID returned by prepare.
 ./pixcut preview JOB_ID --terminal
-./pixcut print JOB_ID --dry-run
 ./pixcut print JOB_ID
 
-# Six smaller artwork placements on one sheet; copies counts whole sheets.
-./pixcut prepare create/my-sticker.png --width-mm 30 --repeat 6
+# Print two sheets of a prepared design.
 ./pixcut print JOB_ID --copies 2
 
-# Remove near-white background connected to the image's edges.
-./pixcut prepare create/my-sticker.jpg --background white
+# Change the watcher defaults.
+./pixcut watch --width-mm 50 --border-mm 2
 
-# Watch with custom preparation defaults.
-./pixcut watch --width-mm 60 --border-mm 2
-./pixcut watch --background white
-
-# Offline batch preparation, without prompts or USB access.
-./pixcut watch --once --prepare-only
+# Place only one sticker on each sheet.
+./pixcut prepare create/my-sticker.png --repeat 1
 ```
 
-`--background auto` preserves transparency; opaque artwork gets a rectangular
-outline. `--background keep` composites onto white and cuts a rectangle.
-`--background white` is edge-connected color removal, **not AI subject
-segmentation**. It preserves enclosed white details but can remove white parts
-that touch the background. Inspect the preview. For complex backgrounds,
-export a transparent version of the artwork before dropping it here.
+Use `--repeat auto` to fill the sheet or `--repeat N` for a fixed count.
+Counts that do not fit are rejected. Plan to use a full sheet for each print;
+partial-sheet refeeding is not supported.
 
-Separate artwork islands produce separate cut outlines, with a warning.
-Interior holes are not cut. Tiny components under 0.5 mm² are excluded from
-cut geometry. A requested repeat count that will not fit is rejected without
-silently dropping items. For oversized/tall art, reduce the width.
+For a plain white background, try `--background white` and inspect the preview.
+It removes near-white areas connected to the image edges, so it can also remove
+white artwork that touches the background. For complex backgrounds, prepare
+a transparent PNG first.
 
-### Peeling and cut depth
+The full preview is saved as `jobs/JOB_ID/preview.png`. Red outlines show the
+cut paths and are not printed.
 
-This workflow uses a **kiss cut**: the printed adhesive layer should peel away
-along the outline while the backing sheet stays intact. A sticker does not need
-to fall out of the sheet. If the printed layer itself stays connected or tears
-when peeling, the cut needs inspection before changing blade pressure.
-[Liene describes the intended kiss-cut behavior here](https://www.liene-life.com/blogs/how-tos/how-to-create-stickers-from-any-image-with-the-liene-pixcut-s1-photo-sticker-printer-and-cutter).
+## Cut pressure
 
-Plan each print as a full sheet. This CLI has no partial-sheet refeed workflow.
-
-### Compare cut pressures on one sheet
+The cutter makes a **kiss cut**: the sticker should peel away while the backing
+stays intact. To compare cut pressures on one sheet:
 
 ```sh
-# Prepare three identical stickers, with pressures 42, 44, and 46.
 ./pixcut calibrate-pressure create/my-sticker.png
 ./pixcut preview JOB_ID --terminal
 ./pixcut print JOB_ID
-
-# After inspecting the output, use the lowest pressure that peels cleanly.
-# Example only: 44 is not yet a calibrated value for every printer.
-./pixcut watch --knife-pressure 44
 ```
 
-The test keeps the artwork, dimensions, border, and cut coordinates unchanged.
-Only the pressure varies: at the default size, top = 42, middle = 44, bottom = 46.
-Labels appear in the preview, not on the stickers. Compare peeling while keeping
-the backing intact; a white sliver caused by print/cut alignment is a separate
-issue. Preparing a test does not change the default pressure or start printing.
+At the default size, pressures are **42, 44, and 46**, from top to bottom.
+Use the lowest value that peels cleanly with `--knife-pressure VALUE` when
+preparing a sheet or starting the watcher. The comparison does not change
+your defaults.
 
-For other sizes, `--pressures 42 44 46` assigns one value to each sticker in
-reading order. All samples must fit on one sheet; reduce `--width-mm` if needed.
-This comparison command accepts 2–6 values, limited to 1–50. Inline pressure
-changes use the upstream driver's documented blade-up nudge/return sequence.
-See [upstream pressure notes](https://github.com/popcornhax/PixCut-App/blob/main/docs/pixcut-usb-protocol.md#knife-pressure--profile-kp).
-
-Terminal previews are approximate. `jobs/JOB_ID/preview.png` is the full
-resolution preview. Its red paths show where the knife will cut; they are
-absent from the print JPEG. `cut.svg` contains the vector outlines.
-
-## Printer controls
+## Printer controls and troubleshooting
 
 ```sh
-./pixcut scan
 ./pixcut status
-./pixcut status --props model firmware-revision serial-number media-size big-data
 ./pixcut jobs
-./pixcut cancel          # Current job submitted by this CLI
-./pixcut cancel 42       # A specific device job ID
+./pixcut cancel
 ./pixcut resume
-./pixcut pause           # Experimental: retail firmware support is unverified
 ./pixcut history
 ./pixcut --help
 ```
 
-Use another terminal for status/cancel during a print. The active process
-shares its USB connection through a local socket to avoid competing readers.
-Ctrl-C during a submitted print attempts cancellation, including during upload;
-inspect device status afterward. A timeout/disconnect does not prove the
-printer stopped. The CLI never automatically resends an uncertain job.
+Controls can run in another terminal during a print. If the printer is not
+found, check power and the USB data cable. A charge-only cable will not work.
+The print prompt asks you to confirm that white 4×7 sticker paper is loaded.
 
-This version sends print-and-kiss-cut jobs on 4×7 sticker stock. It does not
-perform firmware updates, calibration writes, photo-only or cut-only jobs,
-or automated AI background removal. Lower-level upstream tools and protocol
-documentation remain available under `vendor/PixCut-App/` for later expansion.
+A disconnected or interrupted job is never automatically resent. If history
+shows `needs-review` or `in-progress`, inspect the printer and run `./pixcut jobs`
+before retrying. Reprint an existing sheet with `./pixcut print JOB_ID`; prepare
+a new job to change its size, layout, or cut pressure.
 
-## Files, recovery, and repeat printing
+## Project details
 
-- `create/`: inbox; original files are never deleted or moved.
-- `jobs/JOB_ID/`: original snapshot, normalized artwork, padded print JPEG,
-  PLT/SVG cut paths, preview, and `job.json`.
-- `job.json`: dimensions, hashes, settings, copy counts, device job IDs,
-  errors, and completion evidence.
-- `jobs/JOB_ID/usb-logs/`: protocol traces from physical print attempts.
-- `.state/`: watcher deduplication, process locks, and active control socket.
+Original images stay in `create/`; prepared sheets and print history are kept
+in `jobs/`. These folders are excluded from Git. See [SECURITY.md](SECURITY.md)
+for local data and bug-report guidance.
 
-Images are deduplicated by contents and preparation settings across watcher
-restarts, including renamed copies. Skipped/failed jobs stay available through
-`history`; explicitly run `print JOB_ID` to try again. To change preparation,
-run `prepare` with different options or change the image. Prepared files are
-hash-checked immediately before printing. Copy count is limited to 1–36 sheets
-per confirmation. Inspect output and remaining supplies before reprinting.
+Setup installs libusb, a local Python 3.12 environment, and the pinned
+[PixCut-App](https://github.com/popcornhax/PixCut-App) driver.
+See [UPSTREAM.md](UPSTREAM.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+for attribution. This is an independent project, unaffiliated with Liene.
 
-`needs-review` means the printer may have accepted the job before communication
-failed. `in-progress` can also remain after a crash. Inspect the printer and
-`jobs` before retrying either state. `completed` is recorded only after the
-driver observes a cut phase, a completion report, and return to idle.
-
-The final print prompt also confirms that **white 4×7 sticker paper** is loaded.
-Some S1s report media code `5009` / `3x3` during 4×7 use, so that reading alone
-cannot verify the physical paper. For this specific reading, the CLI requires
-the operator's stock confirmation and records it alongside the unchanged
-device response. Unknown readings and reported 4×6 photo stock remain blocked,
-as do printer faults/busy states. No device settings are rewritten.
-See the [upstream observations](https://github.com/eastbaymakersclub/pixcut-s1#job-sending).
-
-## Connectivity and dependencies
-
-This implementation uses USB, based on the MIT-licensed
-[PixCut-App](https://github.com/popcornhax/PixCut-App) driver. The S1's advertised
-wireless connection is Bluetooth; it has no advertised Wi-Fi interface.
-[Another project](https://github.com/eastbaymakersclub/pixcut-s1) reports direct
-BLE printing, but Bluetooth has not been integrated or tested here.
-[Liene setup documentation](https://www.liene-life.com/pages/pixcut-help-center).
-
-Setup uses Homebrew libusb and a local Python 3.12 environment. Dependencies
-and the driver commit are pinned. See [UPSTREAM.md](UPSTREAM.md) for provenance
-and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for attribution.
-
-If `doctor` detects no printer, check power and the data cable; a charge-only
-cable will not work. `doctor` returns exit code 2 when absent. Status queries
-and print attempts return nonzero on errors.
-
-## Validation
-
-```sh
-PYTHONPATH=vendor/PixCut-App:. .venv/bin/python -m unittest discover -s tests -v
-```
-
-Automated tests cover geometry, transparency, repeat overflow, manifest
-integrity, confirmation, error reporting, wrong media, and watcher
-deduplication, plus auto-fill, total sticker counts, old-job compatibility,
-and pressure tests that preserve the print raster and cut coordinates.
-An upstream cat sheet was prepared, visually inspected, and
-dry-run checked. The copy-count and skip prompts were exercised in a terminal.
-
-A physical one-sticker job completed, followed by a single-sheet, three-sticker
-pressure test at 42, 44, and 46. The printer confirmed print-and-cut completion
-and returned to idle without errors. **The pressure-test peel comparison and
-registration check remain pending.** These are reverse-engineered protocol
-tools, not an official Liene driver.
+Licensed under [MIT](LICENSE).
