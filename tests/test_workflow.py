@@ -59,7 +59,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertLess(m['layout']['jpeg_bytes'], 1024 ** 2)
         coords = [(int(x), int(y)) for x, y in re.findall(r'[UD](\d+),(\d+)', (job / 'cut.plt').read_text())]
         self.assertTrue(all(0 <= x <= 7112 and 0 <= y <= 4064 for x, y in coords))
-        self.assertEqual(m['layout']['cut_paths'], 1)
+        self.assertEqual(m['layout']['cut_paths'], 2)
         self.assertAlmostEqual(m['layout']['artwork_mm'][0], 65, delta=0.1)
         self.assertAlmostEqual(m['layout']['cut_bounds_mm'][0], 65, delta=0.3)
         cli.validate_artifacts(job, m)
@@ -68,7 +68,7 @@ class WorkflowTests(unittest.TestCase):
         image = sticker()
         ImageDraw.Draw(image).ellipse((160, 160, 240, 240), fill=(0, 0, 0, 0))
         info = render(png(image), Options(), self.root / 'render')
-        self.assertEqual(info['cut_paths'], 1)
+        self.assertEqual(info['cut_paths'], info['stickers_per_sheet'])
 
     def test_white_removal_preserves_enclosed_white_detail(self):
         image = Image.new('RGB', (200, 200), 'white')
@@ -105,6 +105,56 @@ class WorkflowTests(unittest.TestCase):
     def test_repeat_geometry(self):
         job = self.prepare(width_mm=30, repeat=6)
         self.assertEqual(read_json(job / 'job.json')['layout']['cut_paths'], 6)
+
+    def test_auto_fill_three_landscape_stickers_without_resizing(self):
+        self.source.write_bytes(png(Image.new('RGB', (1450, 1085), '#cc2020')))
+        job = self.prepare()
+        manifest = read_json(job / 'job.json')
+        layout = manifest['layout']
+        self.assertEqual(layout['stickers_per_sheet'], 3)
+        self.assertEqual(layout['sheet_capacity'], 3)
+        self.assertEqual(layout['cut_paths'], 3)
+        self.assertAlmostEqual(layout['artwork_mm'][0], 65, delta=0.1)
+        self.assertAlmostEqual(layout['artwork_mm'][1], 48.68, delta=0.1)
+        self.assertEqual(manifest['options']['border_mm'], 0)
+        # Three distinct, nonoverlapping cut regions with the expected gap.
+        from xml.etree import ElementTree
+        root = ElementTree.fromstring((job / 'cut.svg').read_text())
+        bounds = []
+        for polygon in root:
+            points = [tuple(map(float, pair.split(','))) for pair in polygon.attrib['points'].split()]
+            bounds.append((min(y for x, y in points), max(y for x, y in points)))
+        bounds.sort()
+        self.assertTrue(all(bounds[i + 1][0] - bounds[i][1] >= 35 for i in range(2)))
+        self.assertGreaterEqual(bounds[0][0], 59)
+        self.assertLessEqual(bounds[-1][1], 2041)
+        cli.validate_artifacts(job, manifest)
+
+    def test_explicit_single_sticker_remains_available(self):
+        job = self.prepare(repeat=1)
+        manifest = read_json(job / 'job.json')
+        self.assertEqual(cli.stickers_per_sheet(manifest), 1)
+        self.assertEqual(manifest['layout']['cut_paths'], 1)
+        self.assertGreater(manifest['layout']['sheet_capacity'], 1)
+
+    def test_legacy_job_count_is_not_replaced_by_capacity(self):
+        manifest = {'options': {'repeat': 1}, 'layout': {'sheet_capacity': 3}}
+        self.assertEqual(cli.stickers_per_sheet(manifest), 1)
+
+    def test_copy_confirmation_reports_total_stickers(self):
+        with patch('sys.stdin.isatty', return_value=True), patch('builtins.input', return_value='PRINT 2'), contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(cli.confirm_copies(2, per_sheet=3), 2)
+        self.assertIn('2 sheet(s) × 3 sticker(s) per sheet = 6 stickers', output.getvalue())
+
+    def test_cli_defaults_to_auto_fill(self):
+        for command in (['prepare', 'art.png'], ['watch']):
+            self.assertIsNone(cli.get_options(cli.parser().parse_args(command)).repeat)
+        self.assertIsNone(cli.repeat_value('auto'))
+        self.assertEqual(cli.repeat_value('1'), 1)
+
+    def test_auto_fill_rejects_oversized_border(self):
+        with self.assertRaisesRegex(ValueError, 'safe sheet area'):
+            self.prepare(width_mm=88, border_mm=5)
 
     def test_invalid_numeric_options(self):
         for options in (Options(width_mm=float('nan')), Options(border_mm=-1), Options(repeat=0), Options(knife_pressure=101)):

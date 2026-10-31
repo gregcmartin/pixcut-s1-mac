@@ -3,10 +3,11 @@
 Drop artwork into `create/`, prepare a sticker sheet, review it in the terminal,
 choose a copy count, and confirm printing. All image processing runs locally.
 
-**Status: USB communication verified; physical printing not yet verified.**
+**Status: USB communication and a physical print-and-cut job verified.**
 A connected PixCut S1 on firmware `1.0.34_0073` responds to identity, status,
-media, and job-list queries. Artwork preparation and previews have been checked,
-but no physical job has yet been sent from this implementation.
+media, and job-list queries. A one-sheet job completed printing and cutting,
+returned to idle, and was confirmed by the operator. Peel quality and precise
+cut registration still need checking on the output.
 
 ## Install and connect
 
@@ -30,8 +31,9 @@ is holding the connection.
 ```
 
 Copy a generated image into `create/`. The watcher waits for the file to stop
-changing, generates the sheet, displays an approximate color preview, asks for
-**sheet copies**, then asks you to type `PRINT 1` (or the chosen number).
+changing, fills the sheet with copies at the chosen artwork size, displays an
+approximate color preview, asks for **sheet copies**, then shows the total
+sticker count before asking you to type `PRINT 1` (or the chosen sheet count).
 Enter at the final prompt skips; `q` at the copy-count prompt also skips.
 **No confirmation means no print.** Ctrl-C stops the watcher.
 
@@ -41,10 +43,18 @@ required. The repository is independent of and unaffiliated with Liene.
 
 ## Artwork and sizing
 
-Default: one artwork placement per sheet, **65 mm wide**, with **no added
-border**, 5 mm minimum sheet margins, and upstream knife
+Default: **fill the sheet** with artwork **65 mm wide**, with **no added
+border**, 5 mm minimum sheet margins, 3 mm gaps, and upstream knife
 pressure 42. Physical cut alignment and pressure need checking on the first
 sheet. Width excludes the border; height follows the image aspect ratio.
+
+Auto-fill uses a grid at the requested size; it does not shrink or rotate your
+artwork to squeeze in more. For a 65 × 48.7 mm design, this places **three
+stickers on one sheet**. Printing two sheets gives six stickers. The confirmation
+shows both sheet count and total stickers. Use `--repeat 1` when you deliberately
+want just one sticker on the sheet; `--repeat auto` restores auto-fill.
+Existing prepared jobs retain their original layout and must be prepared again
+to take advantage of the new default.
 
 PNG with real transparency is best for a shaped laptop sticker. PNG, JPEG,
 WebP, HEIC/HEIF, TIFF, and BMP are supported. Orientation and palette
@@ -53,6 +63,9 @@ transparency are handled. Only the first image/page of multi-frame files is used
 ```sh
 # Prepare without connecting to or printing on the device.
 ./pixcut prepare create/my-sticker.png --width-mm 65 --border-mm 0
+
+# Explicitly request just one sticker per sheet.
+./pixcut prepare create/my-sticker.png --repeat 1
 
 # The command prints a JOB_ID; use that ID below.
 ./pixcut preview JOB_ID --terminal
@@ -85,6 +98,16 @@ Separate artwork islands produce separate cut outlines, with a warning.
 Interior holes are not cut. Tiny components under 0.5 mm² are excluded from
 cut geometry. A requested repeat count that will not fit is rejected without
 silently dropping items. For oversized/tall art, reduce the width.
+
+### Peeling and cut depth
+
+This workflow uses a **kiss cut**: the printed adhesive layer should peel away
+along the outline while the backing sheet stays intact. A sticker does not need
+to fall out of the sheet. If the printed layer itself stays connected or tears
+when peeling, the cut needs inspection before changing blade pressure.
+[Liene describes the intended kiss-cut behavior here](https://www.liene-life.com/blogs/how-tos/how-to-create-stickers-from-any-image-with-the-liene-pixcut-s1-photo-sticker-printer-and-cutter).
+
+Plan each print as a full sheet. This CLI has no partial-sheet refeed workflow.
 
 Terminal previews are approximate. `jobs/JOB_ID/preview.png` is the full
 resolution preview. Its red paths show where the knife will cut; they are
@@ -171,9 +194,11 @@ PYTHONPATH=vendor/PixCut-App:. .venv/bin/python -m unittest discover -s tests -v
 
 Automated tests cover geometry, transparency, repeat overflow, manifest
 integrity, confirmation, error reporting, wrong media, and watcher
-deduplication. An upstream cat sheet was prepared, visually inspected, and
+deduplication, plus auto-fill, total sticker counts, and old-job compatibility.
+An upstream cat sheet was prepared, visually inspected, and
 dry-run checked. The copy-count and skip prompts were exercised in a terminal.
 
-**Physical print/cut, registration, and blade pressure still require the first
-approved sheet.** These are reverse-engineered
-protocol tools, not an official Liene driver.
+A physical one-sticker job completed; the three-sticker sheet has been prepared
+and previewed without another print. **Peel quality and registration remain
+operator checks.** These are reverse-engineered protocol tools, not an official
+Liene driver.

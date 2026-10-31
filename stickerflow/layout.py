@@ -22,14 +22,14 @@ DPI = 300
 PX_MM = DPI / 25.4
 SHEET = (1200, 2100)
 EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.heic', '.heif', '.tif', '.tiff', '.bmp'}
-PIPELINE_VERSION = 1
+PIPELINE_VERSION = 2
 
 
 @dataclass(frozen=True)
 class Options:
     width_mm: float = 65.0
     border_mm: float = 0.0
-    repeat: int = 1
+    repeat: int | None = None  # None fills the sheet at the requested size.
     background: str = 'auto'
     knife_pressure: int = 42
 
@@ -38,8 +38,8 @@ class Options:
             raise ValueError('Artwork width must be 5–88 mm.')
         if not math.isfinite(self.border_mm) or not 0 <= self.border_mm <= 5:
             raise ValueError('Border must be 0–5 mm.')
-        if not 1 <= self.repeat <= 100:
-            raise ValueError('Stickers per sheet must be 1–100.')
+        if self.repeat is not None and not 1 <= self.repeat <= 100:
+            raise ValueError('Stickers per sheet must be auto or 1–100.')
         if not 1 <= self.knife_pressure <= 100:
             raise ValueError('Knife pressure must be 1–100.')
         if self.background not in ('auto', 'keep', 'white'):
@@ -117,14 +117,17 @@ def render(data, options, destination):
     cols = int((SHEET[0] - 2 * edge + gap) // (cell_w + gap))
     rows = int((SHEET[1] - 2 * edge + gap) // (cell_h + gap))
     capacity = cols * rows
-    if options.repeat > capacity:
+    if capacity < 1:
+        raise ValueError('Artwork plus border does not fit the safe sheet area. Reduce --width-mm or --border-mm.')
+    count = capacity if options.repeat is None else options.repeat
+    if count > capacity:
         raise ValueError(f'Only {capacity} sticker(s) fit at this size; reduce --repeat or --width-mm. Nothing was omitted.')
-    cols = min(cols, options.repeat)
+    cols = min(cols, count)
     sheet = Image.new('RGBA', SHEET, 'white')
     all_paths = []
-    for i in range(options.repeat):
+    for i in range(count):
         row, col = divmod(i, cols)
-        row_count = min(cols, options.repeat - row * cols)
+        row_count = min(cols, count - row * cols)
         start_x = (SHEET[0] - (row_count * cell_w + (row_count - 1) * gap)) / 2
         dx = round(start_x + col * (cell_w + gap) - x0)
         dy = round(edge + row * (cell_h + gap) - y0)
@@ -160,6 +163,7 @@ def render(data, options, destination):
         'artwork_mm': [round(img.width / PX_MM, 2), round(img.height / PX_MM, 2)],
         'cut_bounds_mm': [round(cell_w / PX_MM, 2), round(cell_h / PX_MM, 2)],
         'cut_paths': len(all_paths), 'sheet_capacity': capacity,
+        'stickers_per_sheet': count, 'layout_mode': 'auto-fill' if options.repeat is None else 'fixed',
         'jpeg_bytes': len(out.getvalue()), 'jpeg_quality': quality,
         'warnings': warnings,
         'sha256': {name: digest((destination / name).read_bytes()) for name in ('print.jpg', 'cut.plt', 'preview.png')},

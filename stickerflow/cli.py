@@ -50,13 +50,22 @@ def prepare(source, options):
         raise
 
 
+def stickers_per_sheet(manifest):
+    # Older prepared sheets retain their original count and artifacts.
+    return manifest['layout'].get('stickers_per_sheet', manifest['options']['repeat'])
+
+
 def describe(job):
     m = read_json(job / 'job.json')
     if not isinstance(m, dict):
         raise ValueError(f'Missing job.json in {job}')
     art = m['layout']['artwork_mm']
     print(f"\nJob: {m['id']}\nArtwork: {art[0]} × {art[1]} mm; border: {m['options']['border_mm']} mm")
-    print(f"Sheet: 4×7 in; {m['options']['repeat']} sticker(s); {m['layout']['cut_paths']} cut path(s); knife pressure {m['options']['knife_pressure']}")
+    count = stickers_per_sheet(m)
+    capacity = m['layout']['sheet_capacity']
+    print(f"Sheet: 4×7 in; {count} sticker(s) per sheet; capacity {capacity} at this size; {m['layout']['cut_paths']} cut path(s); knife pressure {m['options']['knife_pressure']}")
+    if count < capacity:
+        print(f'Note: this layout uses {count} of {capacity} available positions. Prepare again with --repeat auto to fill the sheet.')
     print(f"Preview (red = cut line, not printed): {job / 'preview.png'}")
     for warning in m['layout']['warnings']:
         print(f'Note: {warning}')
@@ -105,11 +114,11 @@ def terminal_preview(job):
         print(''.join(line) + '\033[0m')
 
 
-def confirm_copies(copies):
+def confirm_copies(copies, per_sheet=1):
     if not sys.stdin.isatty():
         raise ValueError('Printing requires an interactive terminal. No --yes override is provided.')
     if copies is None:
-        value = input('How many sheet copies? [1; Enter=1, q=skip] ').strip()
+        value = input(f'How many sheets? ({per_sheet} sticker(s) per sheet) [1; Enter=1, q=skip] ').strip()
         if value.lower() == 'q':
             return None
         try:
@@ -118,6 +127,7 @@ def confirm_copies(copies):
             raise ValueError('Copies must be a whole number from 1 to 36.') from None
     if not 1 <= copies <= 36:
         raise ValueError('Copies must be 1–36 sheets.')
+    print(f'Print total: {copies} sheet(s) × {per_sheet} sticker(s) per sheet = {copies * per_sheet} stickers.')
     expected = f'PRINT {copies}'
     answer = input(f'Confirm WHITE 4×7 STICKER PAPER is loaded and the preview is correct. Type {expected} to print and cut ({copies} sheet(s)); Enter skips: ')
     return copies if answer.strip() == expected else None
@@ -134,13 +144,15 @@ def print_job(job, copies=None, dry_run=False):
             terminal_preview(job)
         if manifest['attempts']:
             print('This job has previous print attempts. Check history and the physical output before deliberately reprinting.')
-        copies = confirm_copies(copies)
+        count = stickers_per_sheet(manifest)
+        copies = confirm_copies(copies, per_sheet=count)
         if copies is None:
             print('Skipped. Prepared files are retained for later printing.')
             return 'skipped'
         validate_artifacts(job, manifest)
         attempt = {'started': now(), 'copies': copies, 'phase': 'connecting',
-                   'confirmed_media': 'white-sticker-4x7'}
+                   'confirmed_media': 'white-sticker-4x7',
+                   'stickers_per_sheet': count, 'total_stickers': count * copies}
         manifest['attempts'].append(attempt)
         manifest['status'] = 'in-progress'
         write_json(job / 'job.json', manifest)
@@ -231,10 +243,22 @@ def watch(args):
             time.sleep(2.1)
 
 
+def repeat_value(value):
+    if value.lower() == 'auto':
+        return None
+    try:
+        number = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError('Use auto or a whole number from 1 to 100.') from None
+    if not 1 <= number <= 100:
+        raise argparse.ArgumentTypeError('Use auto or a whole number from 1 to 100.')
+    return number
+
+
 def add_layout_options(parser):
     parser.add_argument('--width-mm', type=float, default=65, help='Artwork width, excluding border (default: 65).')
     parser.add_argument('--border-mm', type=float, default=0, help='White border outside silhouette (default: 0, no border).')
-    parser.add_argument('--repeat', type=int, default=1, help='Stickers on ONE sheet; distinct from sheet copies.')
+    parser.add_argument('--repeat', type=repeat_value, default=None, metavar='auto|N', help='Stickers per sheet: auto fills it at the chosen size (default); N sets an exact count.')
     parser.add_argument('--background', choices=['auto', 'keep', 'white'], default='auto')
     parser.add_argument('--knife-pressure', type=int, default=42, help='Upstream kiss-cut default: 42; calibrate on your media.')
 
@@ -312,7 +336,8 @@ def main(argv=None):
                     status = 'in-progress / inspect before retrying'
                 print(f"{m['id']}  {status}  {Path(m['source']).name}")
                 for attempt in m['attempts']:
-                    print(f"  {attempt['started']} | {attempt['copies']} sheet(s) | {attempt['phase']} | printer job {attempt.get('printer_job_id', '?')}")
+                    count = attempt.get('stickers_per_sheet', stickers_per_sheet(m))
+                    print(f"  {attempt['started']} | {attempt['copies']} sheet(s) × {count} = {attempt['copies'] * count} stickers | {attempt['phase']} | printer job {attempt.get('printer_job_id', '?')}")
                     if attempt.get('error'):
                         print(f"    {attempt['error']}")
         elif command == 'convert':
